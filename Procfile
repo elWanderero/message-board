@@ -1,1 +1,1 @@
-web: gunicorn message-board:app.py
+web: gunicorn
