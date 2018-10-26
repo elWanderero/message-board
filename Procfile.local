@@ -1,0 +1,2 @@
+web: gunicorn flaskr:app
+log: tail -f ./log/development.log
