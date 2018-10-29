@@ -1,12 +1,31 @@
 # TEST VERSION USER INPUT NOT SANITIZED
 # MOCKY MOCKIDY MOCK
 
-from flask import Flask, jsonify, request
+import os
+import sys
+import json
+import psycopg2
 from datetime import datetime
+#from urllib.parse import urlparse
+from flask import Flask, jsonify, request
+
+DATABASE_URL = os.environ['DATABASE_URL']
+
+
+def db(str):
+    print(str)
+    sys.stdout.flush()
+
+
+db_conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+
 app = Flask(__name__)
 
+
+# mock
 _mock_timestamp = datetime.utcnow().isoformat(timespec='seconds')
 _current_id = 0
+
 
 
 # Definitely TEMP
@@ -25,6 +44,23 @@ def hello():
 @app.route('/hello/<x>')
 def hello2(x):
     return "hello " + x
+
+
+@app.route('/helloDB')
+def helloDB():
+    cur = db_conn.cursor()
+    cur.execute("SELECT * FROM message LIMIT 3")
+    rows = cur.fetchall()
+    tmp1 = []
+    for row in rows:
+        tmp2 = []
+        for col in row:
+            if type(col) == datetime:
+                tmp2.append(col.strftime('%d/%m/%Y'))
+            else:
+                tmp2.append(col)
+        tmp1.append(tmp2)
+    return json.dumps(tmp1)
 
 
 # Create new message
