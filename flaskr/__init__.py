@@ -153,7 +153,10 @@ def delete_messages(msg_id: int) -> str:
 def _delete_message(msg_id: int):
     query = "DELETE FROM {} WHERE {}=%s"
     query = query.format(MSG_TABLE, MSG_ID)
-    _oneoff_query(query, [msg_id])
+    cur = _new_dict_cursor()
+    cur.execute(query, [msg_id])
+    cur.commit()
+    cur.close()
 
 #########################
 #       INTERNALS       #
