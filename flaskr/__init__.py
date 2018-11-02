@@ -155,8 +155,8 @@ def _delete_message(msg_id: int):
     query = query.format(MSG_TABLE, MSG_ID)
     cur = _new_dict_cursor()
     cur.execute(query, [msg_id])
-    cur.commit()
-    cur.close()
+    cur.connection.commit()
+    cur.connection.close()
 
 #########################
 #       INTERNALS       #
