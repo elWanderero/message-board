@@ -89,7 +89,7 @@ def _retrieve_message(cur: cursor_types,
                       datetime_to_string=False):
     query = "SELECT * FROM {} WHERE id=%s LIMIT 1"
     query = query.format(MSG_TABLE)
-    msg_row = _query(cur, query, [msg_id])
+    msg_row = _query(cur, query, [msg_id])[0]
     if datetime_to_string:
         msg_row[MSG_TIMESTAMP] = _datetime_to_str(msg_row[MSG_TIMESTAMP])
     return msg_row
@@ -114,7 +114,10 @@ def _edit_message(msg_id: int, new_text: str, datetime_to_string=False):
                          MSG_ID)
     cur = _new_dict_cursor()
     cur.execute(query, [new_text, msg_id])
-    return _retrieve_message(cur, msg_id, datetime_to_string)
+    new_msg_row = _retrieve_message(cur, msg_id, datetime_to_string)
+    cur.connection.commit()
+    cur.connection.close()
+    return new_msg_row
 
 
 #################################
