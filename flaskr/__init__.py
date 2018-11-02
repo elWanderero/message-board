@@ -54,6 +54,8 @@ def clear_mock():
     query = query.format(MSG_TABLE, MSG_USERNAME)
     cur = _new_dict_cursor()
     cur.execute(query, [_mock_name])
+    cur.connection.commit()
+    cur.connection.close()
     return "yes"
 
 
@@ -87,7 +89,7 @@ def _retrieve_message(cur: cursor_types,
                       datetime_to_string=False):
     query = "SELECT * FROM {} WHERE id=%s LIMIT 1"
     query = query.format(MSG_TABLE)
-    msg_row = _query(cur, query, [msg_id])[0]
+    msg_row = _query(cur, query, [msg_id])
     if datetime_to_string:
         msg_row[MSG_TIMESTAMP] = _datetime_to_str(msg_row[MSG_TIMESTAMP])
     return msg_row
