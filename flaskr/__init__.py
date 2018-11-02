@@ -79,7 +79,7 @@ def post_message():
 def _insert_message(cur: cursor_types, createdby: str, text: str) -> int:
     query = "INSERT INTO {} ({}, {}) VALUES (%s, %s) RETURNING id"
     query = query.format(MSG_TABLE, MSG_USERNAME, MSG_TEXT_BODY)
-    return _execute_and_fetch(cur, query, [createdby, text])[0]['id']
+    return _query(cur, query, [createdby, text])[0]['id']
 
 
 def _retrieve_message(cur: cursor_types,
@@ -87,7 +87,7 @@ def _retrieve_message(cur: cursor_types,
                       datetime_to_string=False):
     query = "SELECT * FROM {} WHERE id=%s LIMIT 1"
     query = query.format(MSG_TABLE)
-    msg_row = _execute_and_fetch(cur, query, [msg_id])[0]
+    msg_row = _query(cur, query, [msg_id])[0]
     if datetime_to_string:
         msg_row[MSG_TIMESTAMP] = _datetime_to_str(msg_row[MSG_TIMESTAMP])
     return msg_row
@@ -107,7 +107,9 @@ def replace_message(msg_id: int):
 
 def _edit_message(msg_id: int, new_text: str, datetime_to_string=False):
     query = "UPDATE {} SET {}=CURRENT_TIMESTAMP {}=%s WHERE {}=%s"
-    query.format(MSG_TABLE, MSG_UPDATED_TIMESTAMP, MSG_TEXT_BODY, MSG_ID)
+    query = query.format(MSG_TABLE,
+                         MSG_UPDATED_TIMESTAMP, MSG_TEXT_BODY,
+                         MSG_ID)
     cur = _new_dict_cursor()
     cur.execute(query, [new_text, msg_id])
     return _retrieve_message(cur, msg_id, datetime_to_string)
@@ -144,7 +146,7 @@ def delete_messages(msg_id: int) -> str:
 
 
 def _delete_message(msg_id: int):
-    query = "DELETE FROM {} WHERE {}=%s LIMIT 1"
+    query = "DELETE FROM {} WHERE {}=%s"
     query = query.format(MSG_TABLE, MSG_ID)
     _oneoff_query(query, [msg_id])
 
@@ -168,22 +170,22 @@ def _new_dict_cursor():
 
 
 def _query(cur: cursor_types, query: str, params: List):
-    cur.execute(statement, params)
+    cur.execute(query, params)
     return cur.fetchall()
 
 
 def _oneoff_query(query: str, params=None):
     cur = _new_dict_cursor()
-    rows = _execute_and_fetch(cur, statement, params)
+    rows = _query(cur, query, params)
     cur.connection.close()
     return rows
 
 
 # 'statements' and 'listof_listof_params' better have the same lengths.
-def _a_few_queries(statements: List[str], listlist_params: List[List]) -> List:
-    zipped = zip(statements, listlist_params)
+def _a_few_queries(queries: List[str], listlist_params: List[List]) -> List:
+    zipped = zip(queries, listlist_params)
     cur = _new_dict_cursor()
-    results = [_execute_and_fetch(cur, pair[0], pair[1]) for pair in zipped]
+    results = [_query(cur, pair[0], pair[1]) for pair in zipped]
     cur.connection.close()
     return results
 
