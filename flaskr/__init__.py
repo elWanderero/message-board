@@ -17,6 +17,14 @@ MSG_TIMESTAMP = 'created'
 MSG_UPDATED_TIMESTAMP = 'updated'
 MSG_ID = 'id'
 
+# TEMP SECURITY MEASURE! Put an URL_PREFIX in the environment
+# to make stuff accesible only by putting '/URL_PREFIX' in front
+# of all routes.
+URL_PREFIX = os.getenv('URL_PREFIX')
+if URL_PREFIX is None:
+    URL_PREFIX = ""
+else:
+    URL_PREFIX = "/" + URL_PREFIX
 
 app = Flask(__name__)
 
@@ -29,26 +37,26 @@ cursor_types = Union[psycopg2.extras.RealDictCursor,
 ##############################
 
 # Simple test to see if we have contact
-@app.route('/hello/')
+@app.route(URL_PREFIX+'/hello/')
 def hello():
     return "hello"
 
 
 # Test variable sending
-@app.route('/hello/<x>')
+@app.route(URL_PREFIX+'/hello/<x>')
 def hello2(x):
     return "hello " + x
 
 
 # Test databse connection
-@app.route('/helloDB')
+@app.route(URL_PREFIX+'/helloDB')
 def hello_db():
     rows = _oneoff_query("SELECT * FROM message LIMIT 3")
     return _msg_rows_to_json(rows)
 
 
 # Clear all messages belonging to _mock_user
-@app.route('/clearMock')
+@app.route(URL_PREFIX+'/clearMock')
 def clear_mock():
     query = "DELETE FROM {} WHERE {}=%s"
     query = query.format(MSG_TABLE, MSG_USERNAME)
@@ -68,7 +76,7 @@ def clear_mock():
 ############################
 # Requires form-data 'message'
 # NOT SANITIZED
-@app.route('/messages/', methods=['POST'])
+@app.route(URL_PREFIX+'/messages/', methods=['POST'])
 def post_message():
     cur = _new_dict_cursor()
     msg_id = _insert_message(cur, _mock_name, request.form['text'])
@@ -101,7 +109,7 @@ def _retrieve_message(cur: cursor_types,
 #####################
 # Requires form-data 'newMessage'
 # NOT SANITIZED
-@app.route('/messages/<msg_id>', methods=['PUT'])
+@app.route(URL_PREFIX+'/messages/<msg_id>', methods=['PUT'])
 def replace_message(msg_id: int):
     new_text = request.form['newText']
     new_msg_row = _edit_message(msg_id, new_text, datetime_to_string=True)
@@ -125,7 +133,7 @@ def _edit_message(msg_id: int, new_text: str, datetime_to_string=False):
 # GET: All messages by one user
 #################################
 # NOT SANITISED
-@app.route('/users/<usr_id>/messages', methods=['GET'])
+@app.route(URL_PREFIX+'/users/<usr_id>/messages', methods=['GET'])
 def get_messages(usr_id: str):
     return jsonify(_retrieve_messages_by_user(usr_id, datetime_to_string=True))
 
@@ -145,7 +153,7 @@ def _retrieve_messages_by_user(usr_id: str, datetime_to_string=False):
 # DELETE: Delete message
 ##########################
 # NOT SANITIZED
-@app.route('/messages/<msg_id>', methods=['DELETE'])
+@app.route(URL_PREFIX+'/messages/<msg_id>', methods=['DELETE'])
 def delete_messages(msg_id: int) -> str:
     id = int(msg_id)
     _delete_message(id)
