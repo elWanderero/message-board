@@ -92,6 +92,7 @@ def _retrieve_message(cur: cursor_types,
     msg_row = _query(cur, query, [msg_id])[0]
     if datetime_to_string:
         msg_row[MSG_TIMESTAMP] = _datetime_to_str(msg_row[MSG_TIMESTAMP])
+        msg_row[MSG_UPDATED_TIMESTAMP] = _datetime_to_str(msg_row[MSG_UPDATED_TIMESTAMP])
     return msg_row
 
 
@@ -136,6 +137,7 @@ def _retrieve_messages_by_user(usr_id: str, datetime_to_string=False):
     if datetime_to_string:
         for row in rows:
             row[MSG_TIMESTAMP] = _datetime_to_str(row[MSG_TIMESTAMP])
+            row[MSG_UPDATED_TIMESTAMP] = _datetime_to_str(row[MSG_UPDATED_TIMESTAMP])
     return rows
 
 
@@ -222,6 +224,7 @@ def _maybe_datetime_to_str(maybe_dt):
 def _msg_rows_to_json(rows):
     for row in rows:
         row[MSG_TIMESTAMP] = _datetime_to_str(row[MSG_TIMESTAMP])
+        row[MSG_UPDATED_TIMESTAMP] = _datetime_to_str(row[MSG_UPDATED_TIMESTAMP])
     return jsonify(rows)
 
 # db_conn = _new_db_connection()
