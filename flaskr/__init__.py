@@ -106,7 +106,7 @@ def replace_message(msg_id: int):
 
 
 def _edit_message(msg_id: int, new_text: str, datetime_to_string=False):
-    query = "UPDATE {} SET {}=CURRENT_TIMESTAMP {}=%s WHERE {}=%s"
+    query = "UPDATE {} SET {}=CURRENT_TIMESTAMP, {}=%s WHERE {}=%s"
     query = query.format(MSG_TABLE,
                          MSG_UPDATED_TIMESTAMP, MSG_TEXT_BODY,
                          MSG_ID)
