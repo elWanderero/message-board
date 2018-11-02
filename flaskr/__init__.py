@@ -3,37 +3,30 @@
 
 import os
 import sys
-import json
 import psycopg2
+import psycopg2.extras
+from typing import List, Union
 from datetime import datetime
-#from urllib.parse import urlparse
 from flask import Flask, jsonify, request
 
 DATABASE_URL = os.environ['DATABASE_URL']
+MSG_TABLE = 'message'
+MSG_USERNAME = 'createdby'
+MSG_TEXT_BODY = 'text'
+MSG_TIMESTAMP = 'created'
+MSG_UPDATED_TIMESTAMP = 'updated'
+MSG_ID = 'id'
 
-
-def db(str):
-    print(str)
-    sys.stdout.flush()
-
-
-db_conn = psycopg2.connect(DATABASE_URL, sslmode='require')
 
 app = Flask(__name__)
 
-
-# mock
-_mock_timestamp = datetime.utcnow().isoformat(timespec='seconds')
-_current_id = 0
+cursor_types = Union[psycopg2.extras.RealDictCursor,
+                     psycopg2.extensions.cursor]
 
 
-
-# Definitely TEMP
-def _get_new_msg_id() -> int:
-    global _current_id
-    _current_id += 1
-    return _current_id
-
+##############################
+# Simple testing API
+##############################
 
 # Simple test to see if we have contact
 @app.route('/hello/')
@@ -41,72 +34,185 @@ def hello():
     return "hello"
 
 
+# Test variable sending
 @app.route('/hello/<x>')
 def hello2(x):
     return "hello " + x
 
 
+# Test databse connection
 @app.route('/helloDB')
-def helloDB():
-    cur = db_conn.cursor()
-    cur.execute("SELECT * FROM message LIMIT 3")
-    rows = cur.fetchall()
-    tmp1 = []
-    for row in rows:
-        tmp2 = []
-        for col in row:
-            if type(col) == datetime:
-                tmp2.append(col.strftime('%d/%m/%Y'))
-            else:
-                tmp2.append(col)
-        tmp1.append(tmp2)
-    return json.dumps(tmp1)
+def hello_db():
+    rows = _oneoff_query("SELECT * FROM message LIMIT 3")
+    return _msg_rows_to_json(rows)
 
 
-# Create new message
+# Clear all messages belonging to _mock_user
+@app.route('/clearMock')
+def clear_mock():
+    query = "DELETE FROM {} WHERE {}=%s"
+    query = query.format(MSG_TABLE, MSG_USERNAME)
+    cur = _new_dict_cursor()
+    cur.execute(query, [_mock_name])
+    return "yes"
+
+
+#######################################
+#                 API                 #
+#######################################
+
+############################
+# POST: Create new message
+############################
 # Requires form-data 'message'
-# Note returned timestamp format, iso 8601
 # NOT SANITIZED
 @app.route('/messages/', methods=['POST'])
-def post_message() -> str:
-    txt = request.form['text']
-    return jsonify(id=_get_new_msg_id(),
-                   created=_mock_timestamp,
-                   createdBy="John Doe",
-                   text=txt)
+def post_message():
+    cur = _new_dict_cursor()
+    msg_id = _insert_message(cur, _mock_name, request.form['text'])
+    new_msg = _retrieve_message(cur, msg_id, datetime_to_string=True)
+    cur.connection.commit()
+    cur.connection.close()
+    return jsonify(new_msg)
 
 
-# Edit message
+def _insert_message(cur: cursor_types, createdby: str, text: str) -> int:
+    query = "INSERT INTO {} ({}, {}) VALUES (%s, %s) RETURNING id"
+    query = query.format(MSG_TABLE, MSG_USERNAME, MSG_TEXT_BODY)
+    return _execute_and_fetch(cur, query, [createdby, text])[0]['id']
+
+
+def _retrieve_message(cur: cursor_types,
+                      msg_id: int,
+                      datetime_to_string=False):
+    query = "SELECT * FROM {} WHERE id=%s LIMIT 1"
+    query = query.format(MSG_TABLE)
+    msg_row = _execute_and_fetch(cur, query, [msg_id])[0]
+    if datetime_to_string:
+        msg_row[MSG_TIMESTAMP] = _datetime_to_str(msg_row[MSG_TIMESTAMP])
+    return msg_row
+
+
+#####################
+# PUT: Edit message
+#####################
 # Requires form-data 'newMessage'
 # NOT SANITIZED
 @app.route('/messages/<msg_id>', methods=['PUT'])
-def replace_message(msg_id: int) -> str:
+def replace_message(msg_id: int):
     new_text = request.form['newText']
-    return jsonify(id=1,
-                   created=_mock_timestamp,
-                   createdBy="John Doe",
-                   text=new_text)
+    new_msg_row = _edit_message(msg_id, new_text, datetime_to_string=True)
+    return jsonify(new_msg_row)
 
 
-# Get all messages by one user
-# NOT SANITIZED
+def _edit_message(msg_id: int, new_text: str, datetime_to_string=False):
+    query = "UPDATE {} SET {}=CURRENT_TIMESTAMP {}=%s WHERE {}=%s"
+    query.format(MSG_TABLE, MSG_UPDATED_TIMESTAMP, MSG_TEXT_BODY, MSG_ID)
+    cur = _new_dict_cursor()
+    cur.execute(query, [new_text, msg_id])
+    return _retrieve_message(cur, msg_id, datetime_to_string)
+
+
+#################################
+# GET: All messages by one user
+#################################
+# NOT SANITISED
 @app.route('/users/<usr_id>/messages', methods=['GET'])
-def get_messages(usr_id: int) -> str:
-    _mock_usr_name = "John Doe"
-    msg1 = {'id': 1,
-            'created': _mock_timestamp,
-            'createdBy': _mock_usr_name,
-            'text': "Hello world!"}
-    msg2 = {'id': 2,
-            'created': _mock_timestamp,
-            'createdBy': _mock_usr_name,
-            'text': "Hello world again!"}
-    return jsonify([msg1, msg2])
+def get_messages(usr_id: str):
+    return jsonify(_retrieve_messages_by_user(usr_id, datetime_to_string=True))
 
 
-# Delete message
+def _retrieve_messages_by_user(usr_id: str, datetime_to_string=False):
+    query = "SELECT * FROM {} WHERE {}=%s LIMIT 100"
+    query = query.format(MSG_TABLE, MSG_USERNAME)
+    rows = _oneoff_query(query, [usr_id])
+    if datetime_to_string:
+        for row in rows:
+            row[MSG_TIMESTAMP] = _datetime_to_str(row[MSG_TIMESTAMP])
+    return rows
+
+
+##########################
+# DELETE: Delete message
+##########################
 # NOT SANITIZED
 @app.route('/messages/<msg_id>', methods=['DELETE'])
 def delete_messages(msg_id: int) -> str:
     id = int(msg_id)
+    _delete_message(id)
     return jsonify(id=id)
+
+
+def _delete_message(msg_id: int):
+    query = "DELETE FROM {} WHERE {}=%s LIMIT 1"
+    query = query.format(MSG_TABLE, MSG_ID)
+    _oneoff_query(query, [msg_id])
+
+#########################
+#       INTERNALS       #
+#########################
+
+
+def _debug(obj):
+    print(obj)
+    sys.stdout.flush()
+
+
+def _new_db_connection():
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
+
+
+def _new_dict_cursor():
+    db_connection = _new_db_connection()
+    return db_connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+
+def _query(cur: cursor_types, query: str, params: List):
+    cur.execute(statement, params)
+    return cur.fetchall()
+
+
+def _oneoff_query(query: str, params=None):
+    cur = _new_dict_cursor()
+    rows = _execute_and_fetch(cur, statement, params)
+    cur.connection.close()
+    return rows
+
+
+# 'statements' and 'listof_listof_params' better have the same lengths.
+def _a_few_queries(statements: List[str], listlist_params: List[List]) -> List:
+    zipped = zip(statements, listlist_params)
+    cur = _new_dict_cursor()
+    results = [_execute_and_fetch(cur, pair[0], pair[1]) for pair in zipped]
+    cur.connection.close()
+    return results
+
+
+# mock
+_mock_name = "test_usr_3"
+_mock_timestamp = datetime.utcnow().isoformat(timespec='seconds')
+
+
+# Note returned timestamp format, iso 8601
+def _datetime_to_str(dt: datetime) -> str:
+    return dt.isoformat(timespec='seconds')
+    # dt.strftime('%d/%m/%Y')
+
+
+# Turns a datetime into a string, preserves everything else
+def _maybe_datetime_to_str(maybe_dt):
+    if type(maybe_dt) == datetime:
+        return _datetime_to_str(maybe_dt)
+    else:
+        return maybe_dt
+
+
+# Turns 'createdby'-datetimes into strings
+# message row: {id: int, created: str, createdby: str, text: str}
+def _msg_rows_to_json(rows):
+    for row in rows:
+        row[MSG_TIMESTAMP] = _datetime_to_str(row[MSG_TIMESTAMP])
+    return jsonify(rows)
+
+# db_conn = _new_db_connection()
+# _db(str(type(db_conn.cursor())))
