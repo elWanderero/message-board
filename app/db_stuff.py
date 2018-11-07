@@ -1,9 +1,10 @@
 import os
-import typing
 import psycopg2
-import psycopg2.extras
+from psycopg2.extras import RealDictCursor
 from sys import stdout
-# from datetime import datetime
+from typing import List
+from datetime import datetime
+
 # from mypy_extensions import TypedDict
 
 #####################################################
@@ -12,36 +13,47 @@ from sys import stdout
 
 # Database constants
 ####################
-DATABASE_URL = os.environ['DATABASE_URL']
-MSG_TABLE = 'message'
-MSG_USERNAME = 'createdby'
-MSG_TEXT_BODY = 'text'
-MSG_TIMESTAMP = 'created'
-MSG_UPDATED_TIMESTAMP = 'updated'
-MSG_ID = 'id'
+DATABASE_URL = os.environ["DATABASE_URL"]
+MSG_TABLE = "message"
+MSG_AUTHOR = "createdby"
+MSG_TEXT = "text"
+MSG_TIMESTAMP = "created"
+MSG_UPDATED_TIMESTAMP = "updated"
+MSG_ID = "id"
 
 
 # Types
 ####################
 
-# Currently (mypy 0.641) not working with variables instead of
-# hardcoded field names, i.e. MSG_ID instead of 'id'. We do not
-# want hard-coded field names all over, so we skip this solution
-# until we can find a way to solve it.
-# typ_msg_row = TypedDict('typ_msg_row', {
-#     'id': int,
-#     'created': datetime,
-#     'createdby': str,
-#     'text': str,
-#     'updated': datetime
-# })
 
-typ_msg_row = dict
-typ_msg_rows = typing.List[typ_msg_row]
+class Msg:
+    def __init__(
+        self, id: int, created: datetime, author: str, text: str, updated: datetime
+    ):
+        self.id = id
+        self.created = created
+        self.author = author
+        self.text = text
+        self.updated = updated
+
+
+# Msg_row = TypedDict(
+#     "Msg_row",
+#     {
+#         "id": int,
+#         "created": datetime,
+#         "createdby": str,
+#         "text": str,
+#         "updated": datetime,
+#     },
+# )
+
+# typ_msg = dict
+# typ_msgs = List[typ_msg]
 
 # Using union because the bare class raises an error in
 # mypy when referenced throush a variable. Probably a bug.
-typ_cursor = typing.Union[psycopg2.extras.RealDictCursor]
+# typ_cursor = Union[psycopg2.extras.RealDictCursor]
 # typ_cursor = typing.Union[psycopg2.extras.RealDictCursor,
 #                           psycopg2.extensions.cursor]
 
@@ -51,33 +63,31 @@ typ_cursor = typing.Union[psycopg2.extras.RealDictCursor]
 #####################################################
 
 
-def insert_message(username: str, text: str) -> typ_msg_row:
+def insert_message(username: str, text: str) -> Msg:
     """Create and insert a new message into the database.
 
     Returns:
         The newly created message, as a dict
     """
     query = "INSERT INTO {} ({}, {}) VALUES (%s, %s) RETURNING *"
-    query = query.format(MSG_TABLE, MSG_USERNAME, MSG_TEXT_BODY)
-    created_msg = _oneoff_query_and_commit(query, [username, text])[0]
-    return created_msg
+    query = query.format(MSG_TABLE, MSG_AUTHOR, MSG_TEXT)
+    created_msg = _oneoff_query(query, [username, text], True)[0]
+    return _db_msg_row_to_msg(created_msg)
 
 
-def edit_message(msg_id: int, new_text: str) -> typ_msg_row:
+def edit_message(msg_id: int, new_text: str) -> Msg:
     """Edit an existing message in the database.
 
     Returns:
         The newly edited message, as a dict
     """
     query = "UPDATE {} SET {}=CURRENT_TIMESTAMP, {}=%s WHERE {}=%s RETURNING *"
-    query = query.format(MSG_TABLE,
-                         MSG_UPDATED_TIMESTAMP, MSG_TEXT_BODY,
-                         MSG_ID)
-    edited_msg = _oneoff_query_and_commit(query, [new_text, msg_id])[0]
-    return edited_msg
+    query = query.format(MSG_TABLE, MSG_UPDATED_TIMESTAMP, MSG_TEXT, MSG_ID)
+    edited_msg = _oneoff_query(query, [new_text, msg_id], True)[0]
+    return _db_msg_row_to_msg(edited_msg)
 
 
-def retrieve_messages_by_user(usr_id: str, limit=100) -> typ_msg_rows:
+def retrieve_messages_by_user(usr_id: str, limit=100) -> List[Msg]:
     """Retrieve all messages by a given user in the database.
 
     Params:
@@ -88,12 +98,12 @@ def retrieve_messages_by_user(usr_id: str, limit=100) -> typ_msg_rows:
     """
     query = "SELECT * FROM {} WHERE {}=%s {}"
     query_lim = "" if limit == 0 else "LIMIT {}".format(limit)
-    query = query.format(MSG_TABLE, MSG_USERNAME, query_lim)
+    query = query.format(MSG_TABLE, MSG_AUTHOR, query_lim)
     msg_rows = _oneoff_query(query, [usr_id])
-    return msg_rows
+    return _db_msg_rows_to_msgs(msg_rows)
 
 
-def delete_message(msg_id: int) -> typ_msg_row:
+def delete_message(msg_id: int) -> Msg:
     """Deletes an existing message in the database.
 
     Returns:
@@ -101,45 +111,45 @@ def delete_message(msg_id: int) -> typ_msg_row:
     """
     query = "DELETE FROM {} WHERE {}=%s RETURNING *"
     query = query.format(MSG_TABLE, MSG_ID)
-    msg_row = _oneoff_query_and_commit(query, [msg_id])[0]
-    return msg_row
+    msg_row = _oneoff_query(query, [msg_id], True)[0]
+    return _db_msg_row_to_msg(msg_row)
 
 
 #####################################################
 #                     Internals                     #
 #####################################################
 
-def _oneoff_query(query: str, params=None) -> typ_msg_rows:
+
+def _db_msg_row_to_msg(msg_row: dict) -> Msg:
+    a = msg_row[MSG_ID]
+    b = msg_row[MSG_TIMESTAMP]
+    c = msg_row[MSG_AUTHOR]
+    d = msg_row[MSG_TEXT]
+    e = msg_row[MSG_UPDATED_TIMESTAMP]
+    return Msg(a, b, c, d, e)
+
+
+def _db_msg_rows_to_msgs(msg_rows: List[dict]) -> List[Msg]:
+    return [_db_msg_row_to_msg(row) for row in msg_rows]
+
+
+def _oneoff_query(query: str, params=None, commit=False) -> List[dict]:
     cur = _new_dict_cursor()
-    rows = _query(cur, query, params)
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    if commit:
+        cur.connection.commit()
     cur.connection.close()
-    return rows
-
-
-def _oneoff_query_and_commit(query: str, params=None) -> typ_msg_rows:
-    cur = _new_dict_cursor()
-    rows = _query(cur, query, params)
-    _kill_and_commit_cursor(cur)
     return rows
 
 
 def _new_db_connection():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
-def _new_dict_cursor() -> typ_cursor:
+def _new_dict_cursor() -> RealDictCursor:
     db_connection = _new_db_connection()
     return db_connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-
-def _kill_and_commit_cursor(cur: psycopg2.extras.RealDictCursor) -> None:
-    cur.connection.commit()
-    cur.connection.close()
-
-
-def _query(cur: typ_cursor, query: str, params: list) -> typing.List[dict]:
-    cur.execute(query, params)
-    return cur.fetchall()
 
 
 #######################################################
@@ -149,12 +159,20 @@ def _query(cur: typ_cursor, query: str, params: list) -> typing.List[dict]:
 _mock_name = "test_usr_3"
 
 
-def clear_all_messages(username: str):
+def _get_n_msgs(n: int) -> List[Msg]:
+    query = "SELECT * FROM {} LIMIT {}"
+    query = query.format(MSG_TABLE, n)
+    msg_rows = _oneoff_query(query)
+    return _db_msg_rows_to_msgs(msg_rows)
+
+
+def clear_all_messages(username: str) -> None:
     query = "DELETE FROM {} WHERE {}=%s"
-    query = query.format(MSG_TABLE, MSG_USERNAME)
+    query = query.format(MSG_TABLE, MSG_AUTHOR)
     cur = _new_dict_cursor()
     cur.execute(query, [username])
-    _kill_and_commit_cursor(cur)
+    cur.connection.commit()
+    cur.connection.close()
 
 
 def _debug(obj):
