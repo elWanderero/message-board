@@ -1,4 +1,7 @@
 import os
+
+# from sys import stdout
+# from . import jwt_stuff
 from . import db_stuff
 from .db_stuff import Msg
 from typing import List
@@ -60,6 +63,11 @@ def hello_db() -> Response:
 def clear_mock() -> str:
     db_stuff.clear_all_messages(_mock_name)
     return "yes"
+
+
+@app.route(URL_PREFIX + "/test")
+def test() -> str:
+    return request.data
 
 
 #######################################
@@ -136,28 +144,3 @@ def _msgs_to_dicts(
 def _dt_to_str(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds")
     # dt.strftime('%d/%m/%Y')
-
-
-# # HTML-escape relevant strings
-# def _sanitise_msg(row: Msg) -> Msg:
-#     row[db_stuff.MSG_USERNAME] = escape(row[db_stuff.MSG_USERNAME])
-#     row[db_stuff.MSG_TEXT_BODY] = escape(row[db_stuff.MSG_TEXT_BODY])
-#     return row
-
-
-# def _sanitise_msgs(rows: List[Msg]) -> List[Msg]:
-#     return [_sanitise_msg(row) for row in rows]
-
-
-# # Turn datetimes into strings
-# def _stringify_msg(row: Msg) -> Msg:
-#     # Turn datetimes into str
-#     row[db_stuff.MSG_TIMESTAMP] = _datetime_to_str(row[db_stuff.MSG_TIMESTAMP])
-#     row[db_stuff.MSG_UPDATED_TIMESTAMP] = _datetime_to_str(
-#         row[db_stuff.MSG_UPDATED_TIMESTAMP]
-#     )
-#     return row
-
-
-# def _stringify_msgs(rows: List[Msg]) -> List[Msg]:
-#     return [_stringify_msg(row) for row in rows]
