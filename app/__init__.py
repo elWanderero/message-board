@@ -1,7 +1,8 @@
 import os
 
-# from sys import stdout
-# from . import jwt_stuff
+from sys import stdout
+from . import jwt_stuff
+import jwt
 from . import db_stuff
 from .db_stuff import Msg
 from typing import List
@@ -15,6 +16,10 @@ API_TIMESTAMP = "created"
 API_AUTHOR = "createdby"
 API_TEXT = "text"
 API_UPDATED_TIMESTAMP = "updated"
+
+JWT_USERNAME = "sub"  # JWT standard
+JWT_TIMESTAMP = "iat"  # JWT standard, UNIX time
+JWT_TEXT = API_TEXT
 
 
 # mock
@@ -66,8 +71,9 @@ def clear_mock() -> str:
 
 
 @app.route(URL_PREFIX + "/test")
-def test() -> str:
-    return request.data
+def test():
+    jwt_headers = jwt.decode(request.data, options={"verify_signature": False})
+    return jsonify(jwt_headers)
 
 
 #######################################
@@ -80,8 +86,17 @@ def test() -> str:
 # Requires form-data 'message'
 @app.route(URL_PREFIX + "/messages/", methods=["POST"])
 def post_message() -> Response:
-    text = request.form["text"]
-    new_msg = db_stuff.insert_message(_mock_name, text)
+    jwt_blob: str = request.data
+    # return jwt_blob
+    print(jwt_blob)
+    stdout.flush()
+    payload_unvfd = jwt_stuff.get_unverified_payload(jwt_blob)
+    username_unvfd: str = payload_unvfd[JWT_USERNAME]
+    public_key: bytes = db_stuff.get_user_public_key(username_unvfd)
+    payload: dict = jwt_stuff.decode(jwt_blob, public_key)
+    username = payload[JWT_USERNAME]
+    text = payload[JWT_TEXT]
+    new_msg = db_stuff.insert_message(username, text)
     return jsonify(_msg_to_dict(new_msg, True, True))
 
 
