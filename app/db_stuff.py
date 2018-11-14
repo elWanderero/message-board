@@ -14,12 +14,34 @@ from datetime import datetime
 # Database constants
 ####################
 DATABASE_URL = os.environ["DATABASE_URL"]
+
+USR_TABLE = '"user"'
+USR_NAME = "name"
+USR_ID = "id"
+USR_PUBLIC_KEY = "public_key"
+USR = {
+    "TABLE": USR_TABLE,
+    "NAME": USR_NAME,
+    "ID": USR_ID,
+    "PUBLIC_KEY": USR_PUBLIC_KEY,
+}
+
 MSG_TABLE = "message"
 MSG_AUTHOR = "createdby"
+MSG_AUTHOR_ID = "createdby"
 MSG_TEXT = "text"
 MSG_TIMESTAMP = "created"
 MSG_UPDATED_TIMESTAMP = "updated"
 MSG_ID = "id"
+MSG = {
+    "TABLE": MSG_TABLE,
+    "AUTHOR": MSG_AUTHOR,
+    "AUTHOR_ID": MSG_AUTHOR_ID,
+    "TEXT": MSG_TEXT,
+    "TIMESTAMP": MSG_TIMESTAMP,
+    "UPDATED_TIMESTAMP": MSG_UPDATED_TIMESTAMP,
+    "ID": MSG_ID,
+}
 
 
 # Types
@@ -69,9 +91,11 @@ def insert_message(username: str, text: str) -> Msg:
     Returns:
         The newly created message, as a dict
     """
-    query = "INSERT INTO {} ({}, {}) VALUES (%s, %s) RETURNING *"
-    query = query.format(MSG_TABLE, MSG_AUTHOR, MSG_TEXT)
-    created_msg = _oneoff_query(query, [username, text], True)[0]
+    # query = "INSERT INTO {} ({}, {}) VALUES (%s, %s) RETURNING *"
+    # query = query.format(MSG_TABLE, MSG_AUTHOR, MSG_TEXT)
+    query = "INSERT INTO {TABLE} ({AUTHOR_ID}, {TEXT}) (SELECT {{ID}}, %s FROM {{TABLE}} WHERE {{NAME}} = %s) RETURNING {ID}, {TIMESTAMP}, {TEXT}, {UPDATED_TIMESTAMP}, %s AS {{NAME}}"
+    query = query.format(**MSG).format(**USR)
+    created_msg = _oneoff_query(query, [text, username, username], True)[0]
     return _db_msg_row_to_msg(created_msg)
 
 
@@ -115,6 +139,14 @@ def delete_message(msg_id: int) -> Msg:
     return _db_msg_row_to_msg(msg_row)
 
 
+def get_user_public_key(username: str) -> bytes:
+    query = "SELECT {} FROM {} WHERE {}=%s"
+    query = query.format(USR_PUBLIC_KEY, USR_TABLE, USR_NAME)
+    public_key_row = _oneoff_query(query, [username])[0]
+    public_key: bytes = public_key_row[USR_PUBLIC_KEY]
+    return public_key
+
+
 #####################################################
 #                     Internals                     #
 #####################################################
@@ -123,7 +155,7 @@ def delete_message(msg_id: int) -> Msg:
 def _db_msg_row_to_msg(msg_row: dict) -> Msg:
     a = msg_row[MSG_ID]
     b = msg_row[MSG_TIMESTAMP]
-    c = msg_row[MSG_AUTHOR]
+    c = msg_row[USR_NAME]
     d = msg_row[MSG_TEXT]
     e = msg_row[MSG_UPDATED_TIMESTAMP]
     return Msg(a, b, c, d, e)
